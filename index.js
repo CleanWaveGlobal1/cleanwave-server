@@ -17,32 +17,23 @@ app.post('/transcribe', async (req, res) => {
 
     if (!audioUrl) return res.status(400).json({ error: 'No audio URL provided' });
 
-    const BYTES_PER_SECOND = 16000;
-    const CHUNK_DURATION = 120;
-    const startByte = Math.floor(startSeconds * BYTES_PER_SECOND);
-    const endByte = startByte + (BYTES_PER_SECOND * CHUNK_DURATION);
+    const startByte = Math.floor(startSeconds * 8000);
+    const endByte = startByte + 500000;
 
     console.log('Fetching bytes:', startByte, 'to', endByte);
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
-
     const audioResponse = await fetch(audioUrl, {
-      signal: controller.signal,
       headers: {
         'Range': `bytes=${startByte}-${endByte}`,
         'User-Agent': 'Mozilla/5.0 CleanWave/1.0'
       }
     });
 
-    clearTimeout(timeout);
     console.log('Audio response status:', audioResponse.status);
-
     const audioBuffer = await audioResponse.buffer();
     console.log('Audio buffer size:', audioBuffer.length);
 
     if (audioBuffer.length < 1000) {
-      console.log('Audio too small, returning empty');
       return res.json({ muteTimestamps: [] });
     }
 
@@ -69,7 +60,7 @@ app.post('/transcribe', async (req, res) => {
     console.log('Whisper words found:', result.words?.length || 0);
 
     if (!result.words) {
-      console.log('No words in result:', JSON.stringify(result).substring(0, 200));
+      console.log('No words:', JSON.stringify(result).substring(0, 200));
       return res.json({ muteTimestamps: [] });
     }
 
@@ -82,7 +73,7 @@ app.post('/transcribe', async (req, res) => {
       const clean = word.word.toLowerCase().replace(/[^a-z]/g, '');
       const isBanned = banned.some(b => b.length > 2 && (clean === b || clean.includes(b)));
       if (isBanned) {
-        console.log('Banned word found:', clean, 'at', word.start);
+        console.log('Banned word:', clean, 'at', word.start);
         muteTimestamps.push({ start: word.start, end: word.end, word: '***' });
       }
     }
