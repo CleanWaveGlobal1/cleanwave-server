@@ -13,25 +13,24 @@ app.get('/health', (req, res) => {
 app.post('/transcribe', async (req, res) => {
   try {
     const { audioUrl, bannedWords, startSeconds = 0 } = req.body;
-    console.log('Transcribe request - URL:', audioUrl, 'Start:', startSeconds);
+    console.log('Transcribe request:', audioUrl);
 
     if (!audioUrl) return res.status(400).json({ error: 'No audio URL provided' });
 
-    const startByte = Math.floor(startSeconds * 8000);
-    const endByte = startByte + 500000;
+    const cleanUrl = audioUrl.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+    const startByte = Math.floor(startSeconds * 16000);
+    const endByte = startByte + 2000000;
 
-    console.log('Fetching bytes:', startByte, 'to', endByte);
-
-    const audioResponse = await fetch(audioUrl, {
+    const audioResponse = await fetch(cleanUrl, {
       headers: {
         'Range': `bytes=${startByte}-${endByte}`,
         'User-Agent': 'Mozilla/5.0 CleanWave/1.0'
       }
     });
 
-    console.log('Audio response status:', audioResponse.status);
+    console.log('Audio status:', audioResponse.status);
     const audioBuffer = await audioResponse.buffer();
-    console.log('Audio buffer size:', audioBuffer.length);
+    console.log('Buffer size:', audioBuffer.length);
 
     if (audioBuffer.length < 1000) {
       return res.json({ muteTimestamps: [] });
@@ -46,7 +45,6 @@ app.post('/transcribe', async (req, res) => {
     formData.append('response_format', 'verbose_json');
     formData.append('timestamp_granularities[]', 'word');
 
-    console.log('Sending to Whisper API...');
     const whisperResponse = await fetch('https://api.openai.com/v1/audio/transcriptions', {
       method: 'POST',
       headers: {
@@ -57,10 +55,10 @@ app.post('/transcribe', async (req, res) => {
     });
 
     const result = await whisperResponse.json();
-    console.log('Whisper words found:', result.words?.length || 0);
+    console.log('Words found:', result.words?.length || 0);
 
     if (!result.words) {
-      console.log('No words:', JSON.stringify(result).substring(0, 200));
+      console.log('Error:', JSON.stringify(result).substring(0, 200));
       return res.json({ muteTimestamps: [] });
     }
 
@@ -73,12 +71,12 @@ app.post('/transcribe', async (req, res) => {
       const clean = word.word.toLowerCase().replace(/[^a-z]/g, '');
       const isBanned = banned.some(b => b.length > 2 && (clean === b || clean.includes(b)));
       if (isBanned) {
-        console.log('Banned word:', clean, 'at', word.start);
+        console.log('Banned:', clean, 'at', word.start);
         muteTimestamps.push({ start: word.start, end: word.end, word: '***' });
       }
     }
 
-    console.log('Total mute timestamps:', muteTimestamps.length);
+    console.log('Mute timestamps:', muteTimestamps.length);
     res.json({ muteTimestamps });
 
   } catch (e) {
